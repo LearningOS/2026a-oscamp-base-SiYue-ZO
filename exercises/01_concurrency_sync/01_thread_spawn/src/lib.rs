@@ -162,10 +162,10 @@ pub fn double_in_thread(numbers: Vec<i32>) -> Vec<i32> {
     });
 
 
-    handle.join().unwrap();
+    handle.join().unwrap()
 
 
-    todo!()
+   
 }
 
 /// Sum two vectors in parallel, returning a tuple of two sums.
@@ -177,10 +177,10 @@ pub fn parallel_sum(a: Vec<i32>, b: Vec<i32>) -> (i32, i32) {
     // Join both threads to get results
     let handle1 = thread::spawn(move || a.iter().sum::<i32>());
     let handle2 = thread::spawn(move || b.iter().sum::<i32>());
-    handle1.join().unwrap();
-    handle2.join().unwrap();
+    let sum_a = handle1.join().unwrap();
+    let sum_b = handle2.join().unwrap();
+    (sum_a, sum_b)
 
-    todo!()
 }
 
 // ============================================================================
@@ -203,8 +203,8 @@ pub fn named_sleeper(value: i32, ms: u64) -> i32 {
         value
     }).unwrap();
     // TODO: Join the thread and return the value
-    handle.join().unwrap();
-    todo!()
+    handle.join().unwrap()
+
 }
 
 thread_local! {
@@ -219,7 +219,13 @@ thread_local! {
 /// Hint: Use `THREAD_COUNT.with(|cell| { ... })` to access the thread‑local variable.
 pub fn increment_thread_local() -> usize {
     // TODO: Use THREAD_COUNT.with to increment and return the new count
-    todo!()
+
+    THREAD_COUNT.with(|cell| {
+        let mut count = cell.borrow_mut();
+        *count += 1;
+        *count
+    })
+
 }
 
 /// Spawn two threads using a **scoped thread** to compute the sum of two slices without moving ownership.
@@ -235,8 +241,15 @@ pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
     // TODO: Use thread::scope to spawn two threads
     // TODO: Each thread sums its slice
     // TODO: Wait for both threads and return the results
-    todo!()
-}
+
+    thread::scope(|s| {
+        let handle_a = s.spawn(|| a.iter().sum::<i32>());
+        let handle_b = s.spawn(|| b.iter().sum::<i32>());
+        let sum_a = handle_a.join().unwrap();
+        let sum_b = handle_b.join().unwrap();
+        (sum_a, sum_b)
+    })
+}    
 
 /// Handle a possible panic in a spawned thread.
 ///
@@ -252,7 +265,19 @@ pub fn scoped_slice_sum(a: &[i32], b: &[i32]) -> (i32, i32) {
 pub fn handle_panic(value: i32, should_panic: bool) -> Result<i32, ()> {
     // TODO: Spawn a thread that either panics or returns value
     // TODO: Join and map the result appropriately
-    todo!()
+  
+    let handle = thread::spawn(move || {
+        if should_panic {
+            panic!("oops");
+        }
+        value
+    });
+
+    match handle.join() {
+        Ok(v) => Ok(v),   // 线程正常结束，v 是 i32
+        Err(_) => Err(()), // 线程 panic
+    }
+
 }
 
 #[cfg(test)]
