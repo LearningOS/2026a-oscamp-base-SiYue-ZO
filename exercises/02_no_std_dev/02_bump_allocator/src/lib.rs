@@ -64,21 +64,41 @@ impl BumpAllocator {
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // TODO: Implement bump allocation
-        //
-        // Steps:
+        loop{
+            // Steps:
         // 1. Load current next (use Ordering::SeqCst)
+        let mut next = self.next.load(Ordering::SeqCst);
         // 2. Align next up to layout.align()
         //    Hint: align_up(addr, align) = (addr + align - 1) & !(align - 1)
+        let aligned = (next + layout.align() - 1) & !(layout.align() - 1);
         // 3. Compute allocation end = aligned + layout.size()
+        let end = aligned + layout.size();  
         // 4. If end > heap_end, return null_mut()
+        if end > self.heap_end {
+            return null_mut();
+        }
         // 5. Atomically update next to end using compare_exchange
         //    (if CAS fails, another thread raced — retry in a loop)
+        match self.next.compare_exchange_weak(
+                next,
+                end,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return aligned as *mut u8,
+                Err(_) => continue,
+            }
         // 6. Return the aligned address as a pointer
-        todo!()
+
+        }
+        
+    
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
         // Bump allocator does not reclaim individual objects — leave empty
+      
+
     }
 }
 

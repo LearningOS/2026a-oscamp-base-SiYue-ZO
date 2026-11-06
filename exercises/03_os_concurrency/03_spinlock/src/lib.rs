@@ -31,32 +31,43 @@ impl<T> SpinLock<T> {
 
     /// Acquire lock, returning a mutable reference to inner data.
     ///
-    /// TODO: Use compare_exchange to spin until lock is acquired
-    /// 1. In a loop, try to change locked from false to true
-    /// 2. Success uses Acquire ordering, failure uses Relaxed
-    /// 3. On failure call `core::hint::spin_loop()` to hint CPU
-    /// 4. On success return `&mut *self.data.get()`
+    /// Uses Acquire to synchronize with the previous unlock's Release.
     ///
     /// # Safety
-    /// Caller must ensure `unlock` is called after using the data.
+    /// Caller must ensure `unlock` is called after using the data,
+    /// and must not use the returned reference after unlocking.
     pub fn lock(&self) -> &mut T {
-        // TODO
-        todo!()
+        while self
+            .locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            core::hint::spin_loop();
+        }
+        // SAFETY: successful CAS gives this caller exclusive access to data.
+        unsafe { &mut *self.data.get() }
     }
 
     /// Release lock.
     ///
-    /// TODO: Set locked to false (using Release ordering)
+    /// Release makes changes to data visible to the next lock holder.
     pub fn unlock(&self) {
-        // TODO
-        todo!()
+        self.locked.store(false, Ordering::Release);
     }
 
     /// Try to acquire lock without spinning.
     /// Returns Some(&mut T) on success, None if lock is busy.
     pub fn try_lock(&self) -> Option<&mut T> {
-        // TODO: Single compare_exchange attempt
-        todo!()
+        if self
+            .locked
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            // SAFETY: successful CAS gives this caller exclusive access to data.
+            Some(unsafe { &mut *self.data.get() })
+        } else {
+            None
+        }
     }
 }
 
@@ -83,6 +94,17 @@ mod tests {
     fn test_try_lock() {
         let lock = SpinLock::new(0u32);
         assert!(lock.try_lock().is_some());
+        lock.unlock();
+    }
+
+    #[test]
+    fn test_try_lock_while_busy() {
+        let lock = SpinLock::new(42);
+        let data = lock.lock();
+        assert!(lock.try_lock().is_none());
+        assert_eq!(*data, 42);
+        lock.unlock();
+        assert_eq!(*lock.try_lock().unwrap(), 42);
         lock.unlock();
     }
 

@@ -115,11 +115,40 @@ unsafe impl GlobalAlloc for FreeListAllocator {
         // - Check if curr address satisfies align, and (*curr).size >= size
         // - If found, remove it from the list (update prev's next or the free_list head)
         // - Return curr as *mut u8
+        let mut prev = null_mut::<FreeBlock>();
+        let mut curr = self.free_list_head();
 
+        while curr != null_mut() {
+            let curr_addr = curr as usize;
+            let aligned_addr = (curr_addr + align - 1) & !(align - 1);
+            let padding = aligned_addr - curr_addr;
+
+            if (*curr).size >= size + padding {
+                // Found a suitable block
+                if !prev.is_null() {
+                    (*prev).next = (*curr).next;
+                } else {
+                    self.set_free_list_head((*curr).next);
+                }
+                return aligned_addr as *mut u8;
+            }
+
+            prev = curr;
+            curr = (*curr).next;
+        }
         // TODO: Step 2 — no suitable block in free_list, allocate from bump region
-        //
+        
         // Same logic as 02_bump_allocator's alloc
-        todo!()
+        let start = self.bump_next.load(core::sync::atomic::Ordering::Relaxed);
+        let aligned_start = (start + align - 1) & !(align - 1);
+        let end = aligned_start + size;
+
+        if end > self.heap_end {
+            return null_mut(); // OOM
+        }
+
+        self.bump_next.store(end, core::sync::atomic::Ordering::Relaxed);
+        aligned_start as *mut u8
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -131,7 +160,19 @@ unsafe impl GlobalAlloc for FreeListAllocator {
         // 1. Cast ptr to *mut FreeBlock
         // 2. Write FreeBlock { size, next: current list head }
         // 3. Update free_list head to ptr
-        todo!()
+                // 与 alloc 中保持一致的大小，确保头部能完整写入
+        let size = layout.size().max(core::mem::size_of::<FreeBlock>());
+
+        // 1. 把 ptr 视为 FreeBlock 头
+        let block = ptr as *mut FreeBlock;
+
+        // 2. 写入头部信息，next 指向当前链表头
+        (*block).size = size;
+        (*block).next = self.free_list_head();
+
+        // 3. 更新链表头为 ptr（头插）
+        self.set_free_list_head(block);
+    
     }
 }
 
